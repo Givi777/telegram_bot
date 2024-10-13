@@ -1,6 +1,6 @@
 from flask import Flask
 
-def create_flask_app():
+def tgbot():
     app = Flask(__name__)
 
     @app.route('/')
