@@ -1,2 +1,2 @@
-worker: python bot.py
-web: gunicorn bot:app
+worker: python app.py
+web: gunicorn flask_app:app
