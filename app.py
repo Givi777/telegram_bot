@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from bot_commands import setup_bot
-from flask_app import create_flask_app
+from flask_app import tgbot
 from threading import Thread
 
 load_dotenv()
@@ -9,7 +9,7 @@ load_dotenv()
 def main():
     print("Starting the bot...")
 
-    flask_app = create_flask_app()
+    flask_app = tgbot()
     thread = Thread(target=lambda: flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))))
     thread.start()
 
