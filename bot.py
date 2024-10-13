@@ -43,14 +43,22 @@ def fetch_houses():
 
         fetched_houses = []
         for house in house_list:
-            price = house.find('span', class_='listing-detailed-item-price').text.strip() if house.find('span', class_='listing-detailed-item-price') else 'No price available'
             title = house.find('div', class_='listing-detailed-item-title').text.strip() if house.find('div', class_='listing-detailed-item-title') else 'No title available'
+            photo = house.find('div', class_='sc-bc0f943e-0').find('img')['src'] if house.find('div', class_='sc-bc0f943e-0') and house.find('div', class_='sc-bc0f943e-0').find('img') else 'No photo available'
+            price = house.find('span', class_='listing-detailed-item-price').text.strip() if house.find('span', class_='listing-detailed-item-price') else 'No price available'
             location = house.find('div', class_='listing-detailed-item-address').text.strip() if house.find('div', class_='listing-detailed-item-address') else 'No location available'
+            floor = house.find('div', class_='floor-class').text.strip() if house.find('div', class_='floor-class') else 'No floor information available'  # Update with the correct class
+            m2 = house.find('div', class_='m2-class').text.strip() if house.find('div', class_='m2-class') else 'No m² information available'  # Update with the correct class
+            bedrooms = house.find('div', class_='bedroom-class').text.strip() if house.find('div', class_='bedroom-class') else 'No bedroom information available'  # Update with the correct class
 
             fetched_houses.append({
-                'price': price,
                 'title': title,
-                'location': location
+                'photo': photo,
+                'price': price,
+                'location': location,
+                'floor': floor,
+                'm2': m2,
+                'bedrooms': bedrooms
             })
 
         print(f"Fetched {len(fetched_houses)} houses.")
@@ -59,6 +67,7 @@ def fetch_houses():
     except Exception as e:
         print(f"Error fetching houses: {e}")
         return []
+
 
 async def start(update: Update, context):
     print("Start command triggered.")
