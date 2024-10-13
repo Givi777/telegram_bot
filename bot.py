@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from flask import Flask
-from selenium import webdriver
 
 
 load_dotenv()
