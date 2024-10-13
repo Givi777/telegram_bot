@@ -18,7 +18,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button))
 
     from threading import Thread
-    thread = Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))))
+    thread = Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5001))))
     thread.start()
 
     application.run_polling()
