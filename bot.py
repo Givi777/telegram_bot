@@ -6,36 +6,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from flask import Flask
 from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-import time
-import chromedriver_autoinstaller
-
-
-chromedriver_autoinstaller.install() 
-
-
-driver = webdriver.Chrome()
-
-driver.get("https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&advancedSearch=%7B%22individualEntityOnly%22%3Atrue%7D")
-
-time.sleep(5)
-
-clickable_div = driver.find_element(By.CLASS_NAME, 'sc-bc0f943e-0.eHVrHk')
-action = ActionChains(driver)
-action.move_to_element(clickable_div).click().perform()
-
-time.sleep(5)
-
-images = driver.find_elements(By.CSS_SELECTOR, 'div.lg-react-element a.item')
-
-image_urls = [img.get_attribute('data-src') for img in images]
-
-for url in image_urls:
-    print(url)
-
-driver.quit()
-
 
 
 load_dotenv()
@@ -76,7 +46,6 @@ def fetch_houses():
         for house in house_list:
             title = house.find('h2', class_='listing-detailed-item-title').text.strip() if house.find('h2', class_='listing-detailed-item-title') else 'No title available'
 
-            # Extract multiple images from the div
             photo_divs = house.find_all('img', class_='sc-bc0f943e-3')
             photos = [img['src'] for img in photo_divs if img.get('src')]
 
@@ -94,17 +63,32 @@ def fetch_houses():
             m2 = house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ')[0].text.strip() if house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ') else 'No m² information available'  
             bedrooms = house.find('span', class_='icon-bed').find_parent('div').text.strip() if house.find('span', class_='icon-bed') else 'No bedroom information available'
 
+
+            link_list = soup.find_all('div', class_='sc-1384a2b8-6 jlmink')  
+            print(f"Number of links found: {len(link_list)}")
+
+            link = None
+
+            for link_div in link_list:
+                a_tag = link_div.find('a') 
+                if a_tag and 'href' in a_tag.attrs: 
+                    link = a_tag['href']  
+                    print(f"Found link: {link}")
+                    break  
+                else:
+                    print('No valid link found in this div.')
+
             fetched_houses.append({
                 'title': title,
-                'photos': photos,  # Store multiple photos
+                'photos': photos,  
                 'price': price,
                 'location': location,
                 'floor': floor,
                 'm2': m2,
-                'bedrooms': bedrooms
+                'bedrooms': bedrooms,
+                'link': link if link else "No link available"  
             })
 
-        print(f"Fetched {len(fetched_houses)} houses.")
         return fetched_houses
 
     except Exception as e:
@@ -140,7 +124,6 @@ async def button(update: Update, context):
         current_house_index = 0
 
         if houses:
-            print(f"Displaying the first house: {houses[0]}")
             await show_house(query)
         else:
             print("No houses found.")
@@ -174,6 +157,7 @@ async def show_house(query):
         f"🛏️ Bedrooms: {house['bedrooms']}\n"
         f"🏢 Floor: {house['floor']}\n"
         f"📏 Size: {house['m2']}\n"
+        f"🔗 Link: {house['link']}\n"  # Display the link
     )
 
     if house['photos']:
