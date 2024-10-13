@@ -1,10 +1,6 @@
 from flask import Flask
+from web.routes import web_bp
 
-def create_app():
-    app = Flask(__name__)
+app = Flask(__name__)
 
-    @app.route('/')
-    def index():
-        return "<h1>Heroku Python Flask Test Page</h1><p>Your Flask app is running successfully!</p>"
-
-    return app
+app.register_blueprint(web_bp)
