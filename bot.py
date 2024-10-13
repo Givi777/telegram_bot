@@ -16,7 +16,6 @@ app = Flask(__name__)
 def index():
     return "<h1>Heroku Python Flask Test Page</h1><p>Your Flask app is running successfully on Heroku!</p>"
 
-
 current_house_index = 0
 houses = []
 
@@ -43,13 +42,21 @@ def fetch_houses():
 
         fetched_houses = []
         for house in house_list:
-            title = house.find('div', class_='listing-detailed-item-title').text.strip() if house.find('div', class_='listing-detailed-item-title') else 'No title available'
-            photo = house.find('div', class_='sc-bc0f943e-0').find('img')['src'] if house.find('div', class_='sc-bc0f943e-0') and house.find('div', class_='sc-bc0f943e-0').find('img') else 'No photo available'
+            title = house.find('h2', class_='listing-detailed-item-title').text.strip() if house.find('h2', class_='listing-detailed-item-title') else 'No title available'
+            photo = house.find('img', class_='sc-bc0f943e-0').find('img')['src'] if house.find('img', class_='sc-bc0f943e-0') and house.find('div', class_='sc-bc0f943e-0').find('img') else 'No photo available'
             price = house.find('span', class_='listing-detailed-item-price').text.strip() if house.find('span', class_='listing-detailed-item-price') else 'No price available'
-            location = house.find('div', class_='listing-detailed-item-address').text.strip() if house.find('div', class_='listing-detailed-item-address') else 'No location available'
-            floor = house.find('div', class_='floor-class').text.strip() if house.find('div', class_='floor-class') else 'No floor information available'  # Update with the correct class
-            m2 = house.find('div', class_='m2-class').text.strip() if house.find('div', class_='m2-class') else 'No m² information available'  # Update with the correct class
-            bedrooms = house.find('div', class_='bedroom-class').text.strip() if house.find('div', class_='bedroom-class') else 'No bedroom information available'  # Update with the correct class
+            location = house.find('h5', class_='listing-detailed-item-address').text.strip() if house.find('h5', class_='listing-detailed-item-address') else 'No location available'
+
+            floor_divs = house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ')
+            floor = None
+            for div in floor_divs:
+                if "icon-stairs" in div.find('span')['class']:  
+                    floor = div.text.strip()
+                    break
+            floor = floor if floor else 'No floor information available'
+
+            m2 = house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ')[0].text.strip() if house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ') else 'No m² information available'  
+            bedrooms = house.find('span', class_='icon-bed').find_parent('div').text.strip() if house.find('span', class_='icon-bed') else 'No bedroom information available'
 
             fetched_houses.append({
                 'title': title,
@@ -73,8 +80,7 @@ async def start(update: Update, context):
     print("Start command triggered.")
     keyboard = [
         [InlineKeyboardButton("Rent", callback_data='rent')],
-        [InlineKeyboardButton("Buy", callback_data='buy')],
-        [InlineKeyboardButton("Mortgage", callback_data='mortgage')]
+        [InlineKeyboardButton("Buy", callback_data='buy')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -124,17 +130,25 @@ async def show_house(query):
     print(f"Displaying house: {house}")
 
     text = (
-        f"🏠 **House {current_house_index + 1}:**\n"
+        f"🏠 Option: {current_house_index + 1}\n"
+        f"📄 Title: {house['title']}\n"
         f"💵 Price: {house['price']}\n"
         f"📍 Location: {house['location']}\n"
-        f"📄 Title: {house['title']}\n"
+        f"🛏️ Bedrooms: {house['bedrooms']}\n"
+        f"🏢 Floor: {house['floor']}\n"
+        f"📏 Size: {house['m2']}\n"
     )
+
     keyboard = [[InlineKeyboardButton("Next", callback_data='next')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(text=text, reply_markup=reply_markup)
+    if house['photo'] != 'No photo available':
+        await query.message.reply_photo(photo=house['photo'], caption=text, reply_markup=reply_markup)
+    else:
+        await query.edit_message_text(text=text, reply_markup=reply_markup)
 
     print("House details sent to user.")
+
 
 def main():
     print("Starting the bot...")
