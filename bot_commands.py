@@ -3,10 +3,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from scraper import fetch_houses
 
-# Load the bot token from environment variables
 bot_token = os.getenv('BOT_TOKEN')
 
-# Global variables to store house data
+
 current_house_index = 0
 houses = []
 
@@ -64,9 +63,9 @@ async def show_house(query):
 def setup_bot():
     application = Application.builder().token(bot_token).build()
 
-    # Register command handlers
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Start polling for updates
+
     application.run_polling()
