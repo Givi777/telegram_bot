@@ -4,9 +4,18 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from flask import Flask
 
 load_dotenv()
+
 bot_token = os.getenv('BOT_TOKEN')
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return "<h1>Heroku Python Flask Test Page</h1><p>Your Flask app is running successfully on Heroku!</p>"
+
 
 current_house_index = 0
 houses = []
@@ -83,7 +92,10 @@ async def button(update: Update, context):
             await show_house(query)
         else:
             print("No houses found.")
-            await query.edit_message_text("No houses found.")
+            if query.message.text != "No houses found.":
+                await query.edit_message_text("No houses found.")
+            else:
+                print("Message already says 'No houses found'.")
     elif query.data == 'next':
         print(f"Next button pressed. Current house index: {current_house_index}")
         current_house_index += 1
@@ -112,6 +124,7 @@ async def show_house(query):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.edit_message_text(text=text, reply_markup=reply_markup)
+
     print("House details sent to user.")
 
 def main():
@@ -120,6 +133,10 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
+
+    from threading import Thread
+    thread = Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))))
+    thread.start()
 
     application.run_polling()
 
