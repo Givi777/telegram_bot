@@ -9,6 +9,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import time
+import chromedriver_autoinstaller
+
+
+chromedriver_autoinstaller.install() 
 
 
 driver = webdriver.Chrome()
