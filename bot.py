@@ -5,11 +5,9 @@ from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
-# Load environment variables
 load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')
 
-# Global variables
 current_house_index = 0
 houses = []
 
@@ -123,7 +121,6 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Start polling for updates
     application.run_polling()
 
 if __name__ == '__main__':
