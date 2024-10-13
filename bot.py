@@ -1,14 +1,22 @@
+import os
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from bot.handlers import start, button
-import os
+from web.app import app
 
-def run_bot():
+def main():
     bot_token = os.getenv('BOT_TOKEN')
     application = Application.builder().token(bot_token).build()
 
-    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Start polling for updates
+    # Start Flask in a separate thread
+    from threading import Thread
+    thread = Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))))
+    thread.start()
+
+    # Start polling the Telegram bot
     application.run_polling()
+
+if __name__ == '__main__':
+    main()

@@ -1,6 +1,1 @@
-from flask import Flask
-from web.routes import web_bp
-
-app = Flask(__name__)
-
-app.register_blueprint(web_bp)
+# This file can be empty or include any necessary initial setup logic for the bot module
