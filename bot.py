@@ -5,6 +5,34 @@ from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from flask import Flask
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
+import time
+
+
+driver = webdriver.Chrome()
+
+driver.get("https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&advancedSearch=%7B%22individualEntityOnly%22%3Atrue%7D")
+
+time.sleep(5)
+
+clickable_div = driver.find_element(By.CLASS_NAME, 'sc-bc0f943e-0.eHVrHk')
+action = ActionChains(driver)
+action.move_to_element(clickable_div).click().perform()
+
+time.sleep(5)
+
+images = driver.find_elements(By.CSS_SELECTOR, 'div.lg-react-element a.item')
+
+image_urls = [img.get_attribute('data-src') for img in images]
+
+for url in image_urls:
+    print(url)
+
+driver.quit()
+
+
 
 load_dotenv()
 
@@ -22,7 +50,7 @@ houses = []
 def fetch_houses():
     print("Fetching houses from the website...")
 
-    url = "https://home.ss.ge/ka/udzravi-qoneba/l/bina/iyideba?cityIdList=95&currencyId=1&advancedSearch=%7B%22individualEntityOnly%22%3Atrue%7D"
+    url = "https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&advancedSearch=%7B%22individualEntityOnly%22%3Atrue%7D"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
     }
@@ -43,7 +71,11 @@ def fetch_houses():
         fetched_houses = []
         for house in house_list:
             title = house.find('h2', class_='listing-detailed-item-title').text.strip() if house.find('h2', class_='listing-detailed-item-title') else 'No title available'
-            photo = house.find('img', class_='sc-bc0f943e-0').find('img')['src'] if house.find('img', class_='sc-bc0f943e-0') and house.find('div', class_='sc-bc0f943e-0').find('img') else 'No photo available'
+
+            # Extract multiple images from the div
+            photo_divs = house.find_all('img', class_='sc-bc0f943e-3')
+            photos = [img['src'] for img in photo_divs if img.get('src')]
+
             price = house.find('span', class_='listing-detailed-item-price').text.strip() if house.find('span', class_='listing-detailed-item-price') else 'No price available'
             location = house.find('h5', class_='listing-detailed-item-address').text.strip() if house.find('h5', class_='listing-detailed-item-address') else 'No location available'
 
@@ -60,7 +92,7 @@ def fetch_houses():
 
             fetched_houses.append({
                 'title': title,
-                'photo': photo,
+                'photos': photos,  # Store multiple photos
                 'price': price,
                 'location': location,
                 'floor': floor,
@@ -74,6 +106,7 @@ def fetch_houses():
     except Exception as e:
         print(f"Error fetching houses: {e}")
         return []
+
 
 
 async def start(update: Update, context):
@@ -139,15 +172,25 @@ async def show_house(query):
         f"📏 Size: {house['m2']}\n"
     )
 
-    keyboard = [[InlineKeyboardButton("Next", callback_data='next')]]
+    if house['photos']:
+        photo = house['photos'][0] 
+        keyboard = [
+            [InlineKeyboardButton("Next", callback_data='next')],
+            [InlineKeyboardButton("View more photos", callback_data=f'view_photos_{current_house_index}')]  # Button to view more photos
+        ]
+    else:
+        photo = None
+        keyboard = [[InlineKeyboardButton("Next", callback_data='next')]]
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if house['photo'] != 'No photo available':
-        await query.message.reply_photo(photo=house['photo'], caption=text, reply_markup=reply_markup)
+    if photo:
+        await query.message.reply_photo(photo=photo, caption=text, reply_markup=reply_markup)
     else:
         await query.edit_message_text(text=text, reply_markup=reply_markup)
 
     print("House details sent to user.")
+
 
 
 def main():
