@@ -4,25 +4,26 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from threading import Thread
 from flask import Flask
 
-
-load_dotenv()
-
-bot_token = os.getenv('BOT_TOKEN')
 
 app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return "<h1>Heroku Python Flask Test Page</h1><p>Your Flask app is running successfully on Heroku!</p>"
+    return "<h1>Heroku</h1>"
 
-current_house_index = 0
-houses = []
+load_dotenv()
+
+bot_token = os.getenv('BOT_TEST_TOKEN')
+
+user_states = {}
+
+
+
 
 def fetch_houses():
-    print("Fetching houses from the website...")
-
     url = "https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&advancedSearch=%7B%22individualEntityOnly%22%3Atrue%7D"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
@@ -30,23 +31,19 @@ def fetch_houses():
 
     try:
         response = requests.get(url, headers=headers)
-        print(f"HTTP status code: {response.status_code}")
 
         if response.status_code == 403:
-            print("Forbidden: The request is being blocked.")
             return []
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
-        house_list = soup.find_all('div', class_='sc-bc0f943e-0')  
-        print(f"Number of houses found: {len(house_list)}")
+        house_list = soup.find_all('div', class_='sc-8fa2c16a-0')
 
         fetched_houses = []
         for house in house_list:
-            title = house.find('h2', class_='listing-detailed-item-title').text.strip() if house.find('h2', class_='listing-detailed-item-title') else 'No title available'
-
-            photo_divs = house.find_all('img', class_='sc-bc0f943e-3')
-            photos = [img['src'] for img in photo_divs if img.get('src')]
+            # Basic house info scraping
+            title = house.find('h2', class_='listing-detailed-item-title')
+            title = title.text.strip() if title else 'No title available'
 
             price = house.find('span', class_='listing-detailed-item-price').text.strip() if house.find('span', class_='listing-detailed-item-price') else 'No price available'
             location = house.find('h5', class_='listing-detailed-item-address').text.strip() if house.find('h5', class_='listing-detailed-item-address') else 'No location available'
@@ -54,38 +51,35 @@ def fetch_houses():
             floor_divs = house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ')
             floor = None
             for div in floor_divs:
-                if "icon-stairs" in div.find('span')['class']:  
+                if "icon-stairs" in div.find('span')['class']:
                     floor = div.text.strip()
                     break
             floor = floor if floor else 'No floor information available'
 
-            m2 = house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ')[0].text.strip() if house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ') else 'No m² information available'  
-            bedrooms = house.find('span', class_='icon-bed').find_parent('div').text.strip() if house.find('span', class_='icon-bed') else 'No bedroom information available'
+            m2 = house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ')[0].text.strip() if house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ') else 'No m² information available'
+           
+            bedrooms = house.find('span', class_='icon-bed').find_parent('div')
+            bedrooms = bedrooms.text.strip() if bedrooms else 'No available'
 
+            link_tag = house.find('a', href=True)
+            if link_tag:
+                relative_link = link_tag['href']
+                house_link = f"https://home.ss.ge{relative_link}"  # Construct full URL
+            else:
+                house_link = None
 
-            link_list = soup.find_all('div', class_='sc-1384a2b8-6 jlmink')  
-            print(f"Number of links found: {len(link_list)}")
+            photos = []
 
-            link = None
-
-            for link_div in link_list:
-                a_tag = link_div.find('a') 
-                if a_tag and 'href' in a_tag.attrs: 
-                    link = a_tag['href']  
-                    print(f"Found link: {link}")
-                    break  
-                else:
-                    print('No valid link found in this div.')
 
             fetched_houses.append({
                 'title': title,
-                'photos': photos,  
+                'photos': photos,
                 'price': price,
                 'location': location,
                 'floor': floor,
                 'm2': m2,
                 'bedrooms': bedrooms,
-                'link': link if link else "No link available"  
+                'links': [house_link] if house_link else ['No link available']
             })
 
         return fetched_houses
@@ -96,8 +90,9 @@ def fetch_houses():
 
 
 
+
+
 async def start(update: Update, context):
-    print("Start command triggered.")
     keyboard = [
         [InlineKeyboardButton("Rent", callback_data='rent')],
         [InlineKeyboardButton("Buy", callback_data='buy')]
@@ -108,77 +103,97 @@ async def start(update: Update, context):
         "Choose an option from the inline menu:",
         reply_markup=reply_markup
     )
-    print("Main menu sent to user.")
 
 async def button(update: Update, context):
-    global current_house_index, houses
+    user_id = update.effective_user.id
+    if user_id not in user_states:
+        user_states[user_id] = {
+            'current_house_index': 0,
+            'houses': [],
+            'houses_fetched': False  # Track if houses have been fetched
+        }
+
     query = update.callback_query
     await query.answer()
 
-    print(f"Button pressed: {query.data}")
-
     if query.data == 'buy':
-        print("User selected 'Buy'. Fetching house listings...")
-        houses = fetch_houses() 
-        current_house_index = 0
+        if not user_states[user_id]['houses_fetched']:
+            houses = fetch_houses()
+            user_states[user_id]['houses'] = houses
+            user_states[user_id]['houses_fetched'] = True  # Mark houses as fetched
+            user_states[user_id]['current_house_index'] = 0
 
-        if houses:
-            await show_house(query)
-        else:
-            print("No houses found.")
-            if query.message.text != "No houses found.":
-                await query.edit_message_text("No houses found.")
+            if houses:
+                await show_house(query, user_id)
             else:
-                print("Message already says 'No houses found'.")
-    elif query.data == 'next':
-        print(f"Next button pressed. Current house index: {current_house_index}")
-        current_house_index += 1
-
-        if current_house_index < len(houses):
-            print(f"Displaying house at index {current_house_index}: {houses[current_house_index]}")
-            await show_house(query)
+                await query.edit_message_text("No houses found.")
         else:
-            print("No more houses available.")
+            # Create the reply markup with the "Next" button
+            keyboard = [
+                [InlineKeyboardButton("Next", callback_data='next')]
+            ]
+
+            await query.edit_message_text(
+                "Houses have already been fetched. Please use the Next button to view them.",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+    
+    elif query.data == 'next':
+        current_house_index = user_states[user_id]['current_house_index']
+        
+        if current_house_index + 1 < len(user_states[user_id]['houses']):
+            user_states[user_id]['current_house_index'] += 1  # Increment the index
+            await show_house(query, user_id)  # Show the next house
+        else:
             await query.edit_message_text("No more houses available.")
+
+    elif query.data.startswith('interested_'):
+        house_index = int(query.data.split('_')[1])
+        await query.edit_message_text(f"You've expressed interest in house {house_index + 1}. We'll follow up with more details.")
     else:
-        print(f"Option {query.data} not implemented yet.")
         await query.edit_message_text("Option not implemented yet.")
 
-async def show_house(query):
-    house = houses[current_house_index]
-    print(f"Displaying house: {house}")
 
+async def show_house(query, user_id):
+    current_house_index = user_states[user_id]['current_house_index']
+    house = user_states[user_id]['houses'][current_house_index]
+
+    # Fallback for missing data
+    title = house.get('title', 'No title available')
+    price = house.get('price', 'No price available')
+    location = house.get('location', 'No location available')
+    bedrooms = house.get('bedrooms', 'No bedroom information available')
+    floor = house.get('floor', 'No floor information available')
+    m2 = house.get('m2', 'No m² information available')
+    
+    # Format the links as a single string, joined by newlines
+    links_text = "\n".join(house.get('links', ['No link available']))
+
+    # Compose the message text
     text = (
         f"🏠 Option: {current_house_index + 1}\n"
-        f"📄 Title: {house['title']}\n"
-        f"💵 Price: {house['price']}\n"
-        f"📍 Location: {house['location']}\n"
-        f"🛏️ Bedrooms: {house['bedrooms']}\n"
-        f"🏢 Floor: {house['floor']}\n"
-        f"📏 Size: {house['m2']}\n"
-        f"🔗 Link: {house['link']}\n"  # Display the link
+        f"📄 Title: {title}\n"
+        f"💵 Price: {price}\n"
+        f"📍 Location: {location}\n"
+        f"🛏️ Bedrooms: {bedrooms}\n"
+        f"🏢 Floor: {floor}\n"
+        f"📏 Size: {m2}\n"
+        f"🔗 Links: {links_text}\n"
     )
 
-    if house['photos']:
-        photo = house['photos'][0] 
-        keyboard = [
-            [InlineKeyboardButton("Next", callback_data='next')],
-            [InlineKeyboardButton("View more photos", callback_data=f'view_photos_{current_house_index}')]  # Button to view more photos
-        ]
+    # Create the reply markup with buttons for the user to navigate
+    keyboard = [
+        [InlineKeyboardButton("Next", callback_data='next')],
+        [InlineKeyboardButton("I'm Interested", callback_data=f'interested_{current_house_index}')]
+    ]
+    
+    # If photos are available, include the first one
+    if house.get('photos'):
+        photo = house['photos'][0]
+        await query.message.reply_photo(photo=photo, caption=text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        photo = None
-        keyboard = [[InlineKeyboardButton("Next", callback_data='next')]]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if photo:
-        await query.message.reply_photo(photo=photo, caption=text, reply_markup=reply_markup)
-    else:
-        await query.edit_message_text(text=text, reply_markup=reply_markup)
-
-    print("House details sent to user.")
-
-
+        # If no photos are available, just send the text message
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 def main():
     print("Starting the bot...")
