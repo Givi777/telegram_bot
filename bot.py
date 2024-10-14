@@ -4,76 +4,58 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
-from threading import Thread
-from flask import Flask
-from requests_html import AsyncHTMLSession
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from bs4 import BeautifulSoup
 import time
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
-
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    return "<h1>Heroku</h1>"
-
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+#working
 load_dotenv()
-bot_token = os.getenv('BOT_TOKEN')
+bot_token = os.getenv('BOT_TEST_TOKEN')
 user_states = {}
 
 async def fetch_house_images_selenium(house_link):
     try:
-        print(f"Fetching images from {house_link}")
-        
         chrome_options = Options()
-        chrome_options.add_argument("--window-size=1920x1080")  # Set a specific window size
-        chrome_options.add_argument("--disable-gpu")  # Disable GPU hardware acceleration
-        chrome_options.add_argument("--no-sandbox")  # Bypass OS security model
-        chrome_options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
-
+        chrome_options.add_argument("--window-size=1920x1080")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_experimental_option("prefs", {
+            "profile.managed_default_content_settings.stylesheets": 2,
+            "profile.managed_default_content_settings.fonts": 2,
+        })
 
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
-
         driver.get(house_link)
-        time.sleep(3)  # Wait for the page to load
         
+        wait = WebDriverWait(driver, 10)
         try:
-            image_gallery = driver.find_element(By.CLASS_NAME, 'sc-1acce1b7-10.kCJmmf') 
+            image_gallery = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, 'sc-1acce1b7-10')))
             image_gallery.click()
-            time.sleep(2)  # Wait for images to load
+            time.sleep(2)
         except Exception as e:
             print(f"Error clicking image gallery: {e}")
 
-        # Scroll down to make sure all images are loaded (optional)
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2)  # Wait for the page to finish loading
-        
-        # Extract the rendered page source and parse with BeautifulSoup
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         images_div = soup.find('div', class_='lg-inner')
 
         if not images_div:
-            print(f"No image section found on the page: {house_link}")
             driver.quit()
             return []
 
-        # Extract images
         img_tags = images_div.find_all('img', class_='lg-object lg-image')
         images = [img.get('data-src', img.get('src')) for img in img_tags if img.get('src') or img.get('data-src')]
-
-        driver.quit()  # Close the browser after extracting the data
-        print(f"Images found: {images}")
+        driver.quit()
         return images
     except Exception as e:
         print(f"Error fetching images from {house_link}: {e}")
         return []
-    
-
 
 async def fetch_houses():
     url = "https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1"
@@ -106,7 +88,6 @@ async def fetch_houses():
 
             link_tag = house.find('a', href=True)
             house_link = f"https://home.ss.ge{link_tag['href']}" if link_tag else None
-
             photos = await fetch_house_images_selenium(house_link) if house_link else []
 
             fetched_houses.append({
@@ -121,7 +102,6 @@ async def fetch_houses():
             })
 
         return fetched_houses
-
     except Exception as e:
         print(f"Error fetching houses: {e}")
         return []
@@ -213,10 +193,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
 
-    thread = Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))))
-    thread.start()
-
     application.run_polling()
+
 
 if __name__ == '__main__':
     main()
