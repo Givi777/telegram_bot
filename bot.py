@@ -15,7 +15,7 @@ def index():
     return "<h1>Heroku</h1>"
 
 load_dotenv()
-bot_token = os.getenv('BOT_TOKEN')
+bot_token = os.getenv('BOT_TEST_TOKEN')
 user_states = {}
 
 async def fetch_house_images(house_link):
