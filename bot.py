@@ -16,7 +16,7 @@ def index():
 
 load_dotenv()
 
-bot_token = os.getenv('BOT_TEST_TOKEN')
+bot_token = os.getenv('BOT_TOKEN')
 
 user_states = {}
 
