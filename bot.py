@@ -7,7 +7,14 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from threading import Thread
 from flask import Flask
 from requests_html import AsyncHTMLSession
-#working code
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from bs4 import BeautifulSoup
+import time
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+
 app = Flask(__name__)
 
 @app.route('/')
@@ -18,28 +25,55 @@ load_dotenv()
 bot_token = os.getenv('BOT_TEST_TOKEN')
 user_states = {}
 
-async def fetch_house_images(house_link):
+async def fetch_house_images_selenium(house_link):
     try:
         print(f"Fetching images from {house_link}")
-        session = AsyncHTMLSession()
-        response = await session.get(house_link)
-        await response.html.arender(sleep=1)
+        
+        chrome_options = Options()
+        chrome_options.add_argument("--window-size=1920x1080")  # Set a specific window size
+        chrome_options.add_argument("--disable-gpu")  # Disable GPU hardware acceleration
+        chrome_options.add_argument("--no-sandbox")  # Bypass OS security model
+        chrome_options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
 
-        soup = BeautifulSoup(response.html.html, 'html.parser')
+
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        driver.get(house_link)
+        time.sleep(3)  # Wait for the page to load
+        
+        try:
+            image_gallery = driver.find_element(By.CLASS_NAME, 'sc-1acce1b7-10.kCJmmf') 
+            image_gallery.click()
+            time.sleep(2)  # Wait for images to load
+        except Exception as e:
+            print(f"Error clicking image gallery: {e}")
+
+        # Scroll down to make sure all images are loaded (optional)
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)  # Wait for the page to finish loading
+        
+        # Extract the rendered page source and parse with BeautifulSoup
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
         images_div = soup.find('div', class_='lg-inner')
 
         if not images_div:
             print(f"No image section found on the page: {house_link}")
+            driver.quit()
             return []
 
+        # Extract images
         img_tags = images_div.find_all('img', class_='lg-object lg-image')
-        images = [img['src'] for img in img_tags if img.get('src')]
+        images = [img.get('data-src', img.get('src')) for img in img_tags if img.get('src') or img.get('data-src')]
 
+        driver.quit()  # Close the browser after extracting the data
         print(f"Images found: {images}")
         return images
     except Exception as e:
         print(f"Error fetching images from {house_link}: {e}")
         return []
+    
+
 
 async def fetch_houses():
     url = "https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1"
@@ -73,7 +107,7 @@ async def fetch_houses():
             link_tag = house.find('a', href=True)
             house_link = f"https://home.ss.ge{link_tag['href']}" if link_tag else None
 
-            photos = await fetch_house_images(house_link) if house_link else []
+            photos = await fetch_house_images_selenium(house_link) if house_link else []
 
             fetched_houses.append({
                 'title': title,
