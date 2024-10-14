@@ -141,15 +141,24 @@ async def button(update: Update, context):
 
 async def show_house(query, user_id):
     house = user_states[user_id]['houses'][user_states[user_id]['current_house_index']]
+    
+    title = house.get('title', 'No title available')
+    price = house.get('price', 'No price available')
+    location = house.get('location', 'No location available')
+    bedrooms = house.get('bedrooms', 'No bedrooms available')
+    floor = house.get('floor', 'No floor information available')
+    size = house.get('m2', 'No size available')
+    links = '\n'.join(house.get('links', ['No link available']))
+
     text = (
         f"🏠 Option: {user_states[user_id]['current_house_index'] + 1}\n"
-        f"📄 Title: {house['title']}\n"
-        f"💵 Price: {house['price']}\n"
-        f"📍 Location: {house['location']}\n"
-        f"🛏️ Bedrooms: {house['bedrooms']}\n"
-        f"🏢 Floor: {house['floor']}\n"
-        f"📏 Size: {house['m2']}\n"
-        f"🔗 Links: {'\n'.join(house['links'])}\n"
+        f"📄 Title: {title}\n"
+        f"💵 Price: {price}\n"
+        f"📍 Location: {location}\n"
+        f"🛏️ Bedrooms: {bedrooms}\n"
+        f"🏢 Floor: {floor}\n"
+        f"📏 Size: {size}\n"
+        f"🔗 Links: {links}\n"
     )
 
     keyboard = [
@@ -157,10 +166,13 @@ async def show_house(query, user_id):
         [InlineKeyboardButton("I'm Interested", callback_data=f'interested_{user_states[user_id]["current_house_index"]}')]
     ]
 
-    if house['photos']:
-        await query.message.reply_photo(photo=house['photos'][0], caption=text, reply_markup=InlineKeyboardMarkup(keyboard))
+    if house.get('photos'):
+        await query.message.reply_photo(
+            photo=house['photos'][0], caption=text, reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     else:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
 
 def main():
     application = Application.builder().token(bot_token).build()
