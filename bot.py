@@ -60,34 +60,63 @@ def fetch_house_images_selenium_sync(house_link):
         wait = WebDriverWait(driver, 10)
 
         try:
+            # Click the image gallery button to open it
             image_gallery = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, 'sc-1acce1b7-10')))
             image_gallery.click()
-            time.sleep(5)
+            time.sleep(2)  # Give time for the gallery to load
         except Exception as e:
             print(f"Error clicking image gallery: {e}")
 
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        print("Scrolling to the bottom of the page to load all images...")
+        images = set()  # To store unique image URLs
+        prev_image_count = 0  # To keep track of the number of images before clicking "Next"
+        
+        while True:
+            # Parse the page to find all currently visible images
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            images_divs = soup.find_all('div', class_='lg-item')
 
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        images_divs = soup.find_all('div', class_='lg-item')
-        print(f"Found {len(images_divs)} image containers.")
+            # Collect image URLs
+            new_images = set()
+            for div in images_divs:
+                img_tag = div.find('img', class_='lg-object lg-image')
+                if img_tag:
+                    image_src = img_tag.get('src') or img_tag.get('data-src')
+                    if image_src:
+                        new_images.add(image_src)
+            
+            # Add newly found images to the set of all images
+            images.update(new_images)
+            
+            current_image_count = len(images_divs)  # Track the current number of images
+            
+            # If no new images have been added since the last click, stop clicking "Next"
+            if current_image_count == prev_image_count:
+                print(f"All images loaded. Total images: {len(images)}")
+                break  # Exit loop if no new images are found
 
-        images = []
-        for div in images_divs:
-            img_tag = div.find('img', class_='lg-object lg-image')
-            if img_tag:
-                image_src = img_tag.get('src') or img_tag.get('data-src')
-                if image_src:
-                    images.append(image_src)
-                    print(f"Image found: {image_src}")
+            prev_image_count = current_image_count  # Update the previous image count
+
+            try:
+                # Check if the "Next" button is present and clickable
+                next_button = driver.find_element(By.CLASS_NAME, 'lg-next')
+                if next_button:
+                    print(f"Clicking 'Next' button to load more images... {len(images)} images found so far.")
+                    next_button.click()  # Click to load the next image
+                    time.sleep(1)  # Small delay after clicking next
+                else:
+                    print("No more 'Next' button, all images loaded.")
+                    break  # Exit loop if no next button
+            except Exception as e:
+                print("No 'Next' button found or error occurred, stopping.")
+                break  # Stop if no "Next" button or an error occurs
 
         driver.quit()
-        return images
+        return list(images)  # Return the collected image URLs as a list
 
     except Exception as e:
         print(f"Error fetching images from {house_link}: {e}")
         return []
+
 
 async def fetch_house_images_selenium(house_link):
     return await run_in_executor(fetch_house_images_selenium_sync, house_link)        
