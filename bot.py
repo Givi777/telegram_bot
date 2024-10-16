@@ -69,8 +69,10 @@ def fetch_house_images_selenium_sync(house_link):
 
         images = set()  # To store unique image URLs
         prev_image_count = 0  # To keep track of the number of images before clicking "Next"
-        
-        while True:
+        max_retries = 7  # Maximum retries if no new images are found
+        retries = 0
+
+        while retries < max_retries:
             # Parse the page to find all currently visible images
             soup = BeautifulSoup(driver.page_source, 'html.parser')
             images_divs = soup.find_all('div', class_='lg-item')
@@ -89,10 +91,12 @@ def fetch_house_images_selenium_sync(house_link):
             
             current_image_count = len(images_divs)  # Track the current number of images
             
-            # If no new images have been added since the last click, stop clicking "Next"
+            # If no new images have been added since the last click, increase the retry count
             if current_image_count == prev_image_count:
-                print(f"All images loaded. Total images: {len(images)}")
-                break  # Exit loop if no new images are found
+                retries += 1
+                print(f"No new images found. Retry {retries}/{max_retries}")
+            else:
+                retries = 0  # Reset retries if new images are found
 
             prev_image_count = current_image_count  # Update the previous image count
 
@@ -111,11 +115,13 @@ def fetch_house_images_selenium_sync(house_link):
                 break  # Stop if no "Next" button or an error occurs
 
         driver.quit()
+        print(f"Total images fetched: {len(images)}")
         return list(images)  # Return the collected image URLs as a list
 
     except Exception as e:
         print(f"Error fetching images from {house_link}: {e}")
         return []
+
 
 
 async def fetch_house_images_selenium(house_link):
@@ -262,12 +268,15 @@ async def show_house(query, user_id):
         [InlineKeyboardButton("I'm Interested", callback_data=f'interested_{user_states[user_id]["current_house_index"]}')],
     ]
 
+    # Send media in chunks of 10
     if photos:
-        media_group = [telegram.InputMediaPhoto(photo) for photo in photos]
-        await query.message.reply_media_group(media_group)
-        await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        for i in range(0, len(photos), 10):
+            media_group = [telegram.InputMediaPhoto(photo) for photo in photos[i:i + 10]]
+            await query.message.reply_media_group(media_group)
+
+    # Send the text information separately
+    await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
 
 def main():
     application = Application.builder().token(bot_token).build()
