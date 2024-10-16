@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 import logging
 import asyncio
+from flask import Flask, render_template
+from threading import Thread
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -13,6 +15,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')  # Set this in your .env file
 selenium_service_url = os.getenv('SELENIUM_SERVICE_URL')  # Set the URL for Selenium Service in .env
+
+app = Flask(__name__)  # Initialize Flask app
 
 user_states = {}
 user_states_lock = asyncio.Lock()
@@ -151,7 +155,14 @@ async def show_house(query, user_id):
 
     await query.edit_message_text(text, reply_markup=reply_markup)
 
-def main():
+def run_flask():
+    @app.route('/')
+    def hello():
+        return "<h1>Hello</h1>"  # Return "Hello" message as HTML
+
+    app.run(host='0.0.0.0', port=5000)  # Run Flask on port 5000
+
+def run_telegram_bot():
     application = Application.builder().token(bot_token).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -160,4 +171,8 @@ def main():
     application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    # Use threading to run both Flask and Telegram bot
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+
+    run_telegram_bot()
