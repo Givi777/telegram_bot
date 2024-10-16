@@ -6,24 +6,20 @@ from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 import logging
 import asyncio
-from flask import Flask, render_template
-from threading import Thread
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')  # Set this in your .env file
-selenium_service_url = os.getenv('SELENIUM_SERVICE_URL')  # Set the URL for Selenium Service in .env
-
-app = Flask(__name__)  # Initialize Flask app
+# Remove Selenium service URL since it's not used
 
 user_states = {}
 user_states_lock = asyncio.Lock()
 
 # Full house information fetched, but skipping photo fetching
 async def fetch_houses(offset=0, limit=1):
-    url = f"https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1"
+    url = "https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1"
     headers = {'User-Agent': 'Mozilla/5.0'}
 
     try:
@@ -155,13 +151,6 @@ async def show_house(query, user_id):
 
     await query.edit_message_text(text, reply_markup=reply_markup)
 
-def run_flask():
-    @app.route('/')
-    def hello():
-        return "<h1>Hello</h1>"  # Return "Hello" message as HTML
-
-    app.run(host='0.0.0.0', port=5000)  # Run Flask on port 5000
-
 def run_telegram_bot():
     application = Application.builder().token(bot_token).build()
 
@@ -171,8 +160,4 @@ def run_telegram_bot():
     application.run_polling()
 
 if __name__ == '__main__':
-    # Use threading to run both Flask and Telegram bot
-    flask_thread = Thread(target=run_flask)
-    flask_thread.start()
-
     run_telegram_bot()
