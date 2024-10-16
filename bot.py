@@ -62,7 +62,7 @@ def fetch_house_images_selenium_sync(house_link):
         try:
             image_gallery = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, 'sc-1acce1b7-10')))
             image_gallery.click()
-            time.sleep(2)
+            time.sleep(5)
         except Exception as e:
             print(f"Error clicking image gallery: {e}")
 
