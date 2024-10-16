@@ -20,7 +20,7 @@ load_dotenv()
 bot_token = os.getenv('BOT_TEST_TOKEN')
 user_states = {}
 
-executor = concurrent.futures.ThreadPoolExecutor()  # Initialize the executor for Selenium tasks
+executor = concurrent.futures.ThreadPoolExecutor()
 
 async def run_in_executor(func, *args):
     loop = asyncio.get_event_loop()
@@ -29,25 +29,18 @@ async def run_in_executor(func, *args):
 async def background_fetch_houses(user_id):
     while True:
         next_offset = user_states[user_id]['houses_fetched']
-        print(f"Fetching more houses in the background (offset={next_offset})...")
-        
         new_houses = await fetch_houses(offset=next_offset)
         if new_houses:
             user_states[user_id]['houses'] += new_houses
             user_states[user_id]['houses_fetched'] += len(new_houses)
         else:
-            print("No more houses found, stopping background fetch.")
-            break  # Stop if no more houses are found
-
-        await asyncio.sleep(5)  # Avoid hammering the server
+            break
+        await asyncio.sleep(5)
 
 def fetch_house_images_selenium_sync(house_link):
-    """This function will be run in a separate thread using ThreadPoolExecutor."""
     try:
-        print(f"Starting to fetch images from: {house_link}")
-        
         chrome_options = Options()
-        chrome_options.add_argument("--window-size=1280x720")  
+        chrome_options.add_argument("--window-size=1280x720")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
@@ -56,76 +49,67 @@ def fetch_house_images_selenium_sync(house_link):
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.get(house_link)
         
-        print("Waiting for the image gallery to load...")
         wait = WebDriverWait(driver, 10)
 
         try:
-            # Click the image gallery button to open it
             image_gallery = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, 'sc-1acce1b7-10')))
             image_gallery.click()
-            time.sleep(2)  # Give time for the gallery to load
+            time.sleep(2)
         except Exception as e:
-            print(f"Error clicking image gallery: {e}")
+            pass
 
-        images = set()  # To store unique image URLs
-        prev_image_count = 0  # To keep track of the number of images before clicking "Next"
-        max_retries = 7  # Maximum retries if no new images are found
+        images = set()
+        prev_image_count = 0
+        max_retries = 7
         retries = 0
 
+        blocked_urls = {
+            "https://static.ss.ge/20220722/6ce888d7-3a78-4f81-9008-96c2dcf94e8c.png",
+            "https://static.ss.ge/20221222/b31e02ba-052e-4d2c-b8de-df005086be12.png",
+            "https://static.ss.ge/20240405/b2a5cf2d-b24b-4080-bb83-1955885e2e75.jpeg"
+        }
+
         while retries < max_retries:
-            # Parse the page to find all currently visible images
             soup = BeautifulSoup(driver.page_source, 'html.parser')
             images_divs = soup.find_all('div', class_='lg-item')
 
-            # Collect image URLs
             new_images = set()
             for div in images_divs:
                 img_tag = div.find('img', class_='lg-object lg-image')
                 if img_tag:
                     image_src = img_tag.get('src') or img_tag.get('data-src')
-                    if image_src:
+                    if image_src and image_src not in blocked_urls:
                         new_images.add(image_src)
             
-            # Add newly found images to the set of all images
             images.update(new_images)
             
-            current_image_count = len(images_divs)  # Track the current number of images
-            
-            # If no new images have been added since the last click, increase the retry count
+            current_image_count = len(images_divs)
+
             if current_image_count == prev_image_count:
                 retries += 1
-                print(f"No new images found. Retry {retries}/{max_retries}")
             else:
-                retries = 0  # Reset retries if new images are found
+                retries = 0
 
-            prev_image_count = current_image_count  # Update the previous image count
+            prev_image_count = current_image_count
 
             try:
-                # Check if the "Next" button is present and clickable
                 next_button = driver.find_element(By.CLASS_NAME, 'lg-next')
                 if next_button:
-                    print(f"Clicking 'Next' button to load more images... {len(images)} images found so far.")
-                    next_button.click()  # Click to load the next image
-                    time.sleep(1)  # Small delay after clicking next
+                    next_button.click()
+                    time.sleep(1)
                 else:
-                    print("No more 'Next' button, all images loaded.")
-                    break  # Exit loop if no next button
+                    break
             except Exception as e:
-                print("No 'Next' button found or error occurred, stopping.")
-                break  # Stop if no "Next" button or an error occurs
+                break
 
         driver.quit()
-        print(f"Total images fetched: {len(images)}")
-        return list(images)  # Return the collected image URLs as a list
+        return list(images)
 
     except Exception as e:
-        print(f"Error fetching images from {house_link}: {e}")
         return []
 
-
-
 async def fetch_house_images_selenium(house_link):
-    return await run_in_executor(fetch_house_images_selenium_sync, house_link)        
+    return await run_in_executor(fetch_house_images_selenium_sync, house_link)
 
 async def fetch_houses(offset=0, limit=1):
     url = f"https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1"
@@ -169,23 +153,18 @@ async def fetch_houses(offset=0, limit=1):
 
         return fetched_houses
     except Exception as e:
-        print(f"Error fetching houses: {e}")
         return []
-
-
-
 
 async def start(update: Update, context):
     user_id = update.effective_user.id
 
-    # Initialize user state if not already present
     if user_id not in user_states:
         user_states[user_id] = {
             'current_house_index': 0,
             'current_photo_index': 0,
             'houses': [],
             'houses_fetched': 0,
-            'fetch_task': None  # Store background task here
+            'fetch_task': None
         }
 
     keyboard = [
@@ -209,16 +188,13 @@ async def button(update: Update, context):
         if user_states[user_id]['houses_fetched'] == 0:
             await query.edit_message_text("Fetching the first house, please wait...")
 
-            # Fetch the first house immediately
-            houses = await fetch_houses(limit=1)  
+            houses = await fetch_houses(limit=1)
             if houses:
                 user_states[user_id]['houses'] = houses
                 user_states[user_id]['houses_fetched'] = 1
 
-                # Start the background task to fetch more houses
                 user_states[user_id]['fetch_task'] = asyncio.create_task(background_fetch_houses(user_id))
 
-                # Show the first house immediately
                 await show_house(query, user_id)
             else:
                 await query.edit_message_text("No houses found.")
@@ -229,7 +205,6 @@ async def button(update: Update, context):
         current_index = user_states[user_id]['current_house_index']
 
         if current_index + 1 < user_states[user_id]['houses_fetched']:
-            # Move to the next house
             user_states[user_id]['current_house_index'] += 1
             await show_house(query, user_id)
         else:
@@ -268,13 +243,11 @@ async def show_house(query, user_id):
         [InlineKeyboardButton("I'm Interested", callback_data=f'interested_{user_states[user_id]["current_house_index"]}')],
     ]
 
-    # Send media in chunks of 10
     if photos:
         for i in range(0, len(photos), 10):
             media_group = [telegram.InputMediaPhoto(photo) for photo in photos[i:i + 10]]
             await query.message.reply_media_group(media_group)
 
-    # Send the text information separately
     await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
