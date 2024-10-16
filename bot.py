@@ -37,18 +37,27 @@ async def background_fetch_houses(user_id):
             break
         await asyncio.sleep(5)
 
-def fetch_house_images_selenium_sync(house_link):
-    try:
-        chrome_options = Options()
-        chrome_options.add_argument("--window-size=1280x720")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
+driver = None
 
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.get(house_link)
+
+def fetch_house_images_selenium_sync(house_link):
+    global driver
+    try:
+        if driver is None:  # Initialize driver only once
+            chrome_options = Options()
+            chrome_options.add_argument("--window-size=1280x720")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
         
+        # Open a new tab for the house link
+        driver.execute_script("window.open('');")
+        driver.switch_to.window(driver.window_handles[-1])
+        driver.get(house_link)
+
         wait = WebDriverWait(driver, 10)
 
         try:
@@ -102,11 +111,21 @@ def fetch_house_images_selenium_sync(house_link):
             except Exception as e:
                 break
 
-        driver.quit()
+        # Close the tab once done
+        driver.close()
+        driver.switch_to.window(driver.window_handles[0])  # Switch back to the main tab
+
         return list(images)
 
     except Exception as e:
         return []
+
+def close_driver():
+    global driver
+    if driver:
+        driver.quit()
+        driver = None
+
 
 async def fetch_house_images_selenium(house_link):
     return await run_in_executor(fetch_house_images_selenium_sync, house_link)
@@ -148,7 +167,6 @@ async def fetch_houses(offset=0, limit=1):
                 'floor': floor,
                 'm2': m2,
                 'bedrooms': bedrooms,
-                'links': [house_link] if house_link else ['No link available']
             })
 
         return fetched_houses
