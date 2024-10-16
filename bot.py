@@ -1,4 +1,4 @@
-
+import concurrent.futures
 import os
 import requests
 from bs4 import BeautifulSoup
@@ -19,7 +19,12 @@ load_dotenv()
 bot_token = os.getenv('BOT_TEST_TOKEN')
 user_states = {}
 
-# Background fetch task to keep fetching houses without blocking the UI
+executor = concurrent.futures.ThreadPoolExecutor()  # Initialize the executor for Selenium tasks
+
+async def run_in_executor(func, *args):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(executor, func, *args)
+
 async def background_fetch_houses(user_id):
     while True:
         next_offset = user_states[user_id]['houses_fetched']
@@ -35,12 +40,13 @@ async def background_fetch_houses(user_id):
 
         await asyncio.sleep(5)  # Avoid hammering the server
 
-async def fetch_house_images_selenium(house_link):
+def fetch_house_images_selenium_sync(house_link):
+    """This function will be run in a separate thread using ThreadPoolExecutor."""
     try:
         print(f"Starting to fetch images from: {house_link}")
         
         chrome_options = Options()
-        chrome_options.add_argument("--window-size=1280x720")  # Example size
+        chrome_options.add_argument("--window-size=1280x720")  
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
@@ -51,7 +57,7 @@ async def fetch_house_images_selenium(house_link):
         
         print("Waiting for the image gallery to load...")
         wait = WebDriverWait(driver, 10)
-        
+
         try:
             image_gallery = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, 'sc-1acce1b7-10')))
             image_gallery.click()
@@ -61,7 +67,7 @@ async def fetch_house_images_selenium(house_link):
 
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         print("Scrolling to the bottom of the page to load all images...")
-        
+
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         images_divs = soup.find_all('div', class_='lg-item')
         print(f"Found {len(images_divs)} image containers.")
@@ -82,6 +88,8 @@ async def fetch_house_images_selenium(house_link):
         print(f"Error fetching images from {house_link}: {e}")
         return []
 
+async def fetch_house_images_selenium(house_link):
+    return await run_in_executor(fetch_house_images_selenium_sync, house_link)        
 
 async def fetch_houses(offset=0, limit=1):
     url = f"https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1"
@@ -127,6 +135,7 @@ async def fetch_houses(offset=0, limit=1):
     except Exception as e:
         print(f"Error fetching houses: {e}")
         return []
+
 
 
 
