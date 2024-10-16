@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import telegram
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -195,20 +196,9 @@ async def button(update: Update, context):
         if current_index + 1 < user_states[user_id]['houses_fetched']:
             # Move to the next house
             user_states[user_id]['current_house_index'] += 1
-            user_states[user_id]['current_photo_index'] = 0
             await show_house(query, user_id)
         else:
             await query.edit_message_text("No more houses available (yet). Fetching more in the background...")
-
-    elif query.data == 'next_photo':
-        current_photo_index = user_states[user_id]['current_photo_index']
-        house = user_states[user_id]['houses'][user_states[user_id]['current_house_index']]
-
-        if current_photo_index + 1 < len(house.get('photos', [])):
-            user_states[user_id]['current_photo_index'] += 1
-            await show_house(query, user_id)
-        else:
-            await query.edit_message_text("No more photos available.")
 
     elif query.data.startswith('interested_'):
         house_index = int(query.data.split('_')[1])
@@ -236,19 +226,17 @@ async def show_house(query, user_id):
         f"🔗 Links: {links}\n"
     )
 
-    current_photo_index = user_states[user_id]['current_photo_index']
     photos = house.get('photos', [])
 
     keyboard = [
         [InlineKeyboardButton("Next House", callback_data='next')],
         [InlineKeyboardButton("I'm Interested", callback_data=f'interested_{user_states[user_id]["current_house_index"]}')],
-        [InlineKeyboardButton("Next Photo", callback_data='next_photo')]
     ]
 
     if photos:
-        await query.message.reply_photo(
-            photo=photos[current_photo_index], caption=text, reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        media_group = [telegram.InputMediaPhoto(photo) for photo in photos]
+        await query.message.reply_media_group(media_group)
+        await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
