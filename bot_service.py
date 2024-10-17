@@ -17,7 +17,6 @@ load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')
 user_states = {}
 
-# Function to fetch houses from a specific page
 async def fetch_houses(page=1):
     url = f"https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&page={page}"
     headers = {
@@ -30,25 +29,35 @@ async def fetch_houses(page=1):
             return []
 
         soup = BeautifulSoup(response.content, 'html.parser')
-        house_list = soup.find_all('div', class_='sc-8fa2c16a-0')
+        
+        # Fetch house links from the first div
+        house_link_divs = soup.find_all('div', class_='sc-8fa2c16a-0')
+        house_links = [f"https://home.ss.ge{div.find('a')['href']}" for div in house_link_divs if div.find('a', href=True)]
 
+        # Fetch other house details from the second div
+        house_detail_divs = soup.find_all('div', class_='sc-bc0f943e-0')
+        
         fetched_houses = []
-        for house in house_list:
-            title = house.find('h2', class_='listing-detailed-item-title')
+        for i, detail_div in enumerate(house_detail_divs):
+            title = detail_div.find('h2', class_='listing-detailed-item-title')
             title = title.text.strip() if title else 'No title available'
 
-            price = house.find('span', class_='listing-detailed-item-price').text.strip() if house.find('span', class_='listing-detailed-item-price') else 'No price available'
-            location = house.find('h5', class_='listing-detailed-item-address').text.strip() if house.find('h5', class_='listing-detailed-item-address') else 'No location available'
+            price = detail_div.find('span', class_='listing-detailed-item-price')
+            price = price.text.strip() if price else 'No price available'
 
-            floor_divs = house.find_all('div', class_='sc-bc0f943e-14 hFQLKZ')
+            location = detail_div.find('h5', class_='listing-detailed-item-address')
+            location = location.text.strip() if location else 'No location available'
+
+            floor_divs = detail_div.find_all('div', class_='sc-bc0f943e-14 hFQLKZ')
             floor = next((div.text.strip() for div in floor_divs if "icon-stairs" in div.find('span')['class']), 'No floor information available')
 
             m2 = floor_divs[0].text.strip() if floor_divs else 'No m² information available'
-            bedrooms = house.find('span', class_='icon-bed').find_parent('div')
+
+            bedrooms = detail_div.find('span', class_='icon-bed').find_parent('div')
             bedrooms = bedrooms.text.strip() if bedrooms else 'No available'
 
-            link_tag = house.find('a', href=True)
-            house_link = f"https://home.ss.ge{link_tag['href']}" if link_tag else None
+            # Match the link from the previous div (assuming the number of links matches the number of details)
+            house_link = house_links[i] if i < len(house_links) else None
 
             fetched_houses.append({
                 'title': title,
@@ -65,6 +74,7 @@ async def fetch_houses(page=1):
     except Exception as e:
         print(f"Error fetching houses: {e}")
         return []
+
 
 async def start(update: Update, context):
     keyboard = [
@@ -162,7 +172,6 @@ async def show_house(query, user_id):
         f"🛏️ Bedrooms: {bedrooms}\n"
         f"🏢 Floor: {floor}\n"
         f"📏 Size: {size}\n"
-        f"🔗 Links: {links}\n"
     )
 
     keyboard = [
