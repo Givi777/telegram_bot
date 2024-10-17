@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from threading import Thread
 from flask import Flask
+
 app = Flask(__name__)
 
 @app.route('/')
@@ -16,8 +17,9 @@ load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')
 user_states = {}
 
-async def fetch_houses():
-    url = "https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&page=1"
+# Function to fetch houses from a specific page
+async def fetch_houses(page=1):
+    url = f"https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&page={page}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
     }
@@ -83,13 +85,13 @@ async def button(update: Update, context):
     await query.answer()
 
     if user_id not in user_states:
-        user_states[user_id] = {'current_house_index': 0, 'houses': [], 'houses_fetched': False}
+        user_states[user_id] = {'current_house_index': 0, 'houses': [], 'houses_fetched': False, 'page': 1}
 
     if query.data == 'buy':
         if not user_states[user_id]['houses_fetched']:
             await query.edit_message_text("Fetching houses, please wait...")
-            houses = await fetch_houses()
-            user_states[user_id]['houses'] = houses
+            houses = await fetch_houses(user_states[user_id]['page'])
+            user_states[user_id]['houses'].extend(houses)
             user_states[user_id]['houses_fetched'] = True
 
             if houses:
@@ -109,12 +111,26 @@ async def button(update: Update, context):
             user_states[user_id]['current_house_index'] += 1
             await show_house(query, user_id)
         else:
-            await query.message.reply_text("No more houses available.")
+            # If all houses from current page are shown, fetch the next page
+            user_states[user_id]['page'] += 1
+            await query.edit_message_text(f"Fetching page {user_states[user_id]['page']} houses, please wait...")
+            new_houses = await fetch_houses(user_states[user_id]['page'])
+
+            if new_houses:
+                user_states[user_id]['houses'].extend(new_houses)
+                user_states[user_id]['current_house_index'] += 1
+                await show_house(query, user_id)
+            else:
+                await query.edit_message_text("All houses are fetched. Use 'Restart' to refetch.")
+                keyboard = [
+                    [InlineKeyboardButton("Restart", callback_data='restart')]
+                ]
+                await query.edit_message_text("All houses fetched.", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif query.data == 'restart':
-        user_states[user_id] = {'current_house_index': 0, 'houses': [], 'houses_fetched': False}
+        user_states[user_id] = {'current_house_index': 0, 'houses': [], 'houses_fetched': False, 'page': 1}
         await query.edit_message_text("Fetching new houses, please wait...")
-        houses = await fetch_houses()
+        houses = await fetch_houses(user_states[user_id]['page'])
         user_states[user_id]['houses'] = houses
         user_states[user_id]['houses_fetched'] = True
 
