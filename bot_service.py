@@ -98,22 +98,67 @@ async def button(update: Update, context):
         user_states[user_id] = {'current_house_index': 0, 'houses': [], 'houses_fetched': False, 'page': 1}
 
     if query.data == 'buy':
-        if not user_states[user_id]['houses_fetched']:
-            await query.edit_message_text("Fetching houses, please wait...")
-            houses = await fetch_houses(user_states[user_id]['page'])
-            user_states[user_id]['houses'].extend(houses)
-            user_states[user_id]['houses_fetched'] = True
+        # Show district options
+        keyboard = [
+            [InlineKeyboardButton("Vake-Saburtalo", callback_data='Vake-Saburtalo')],
+            [InlineKeyboardButton("Isani-Samgori", callback_data='Isani-Samgori')],
+            [InlineKeyboardButton("Gldani-Nadzaladevi", callback_data='Gldani-Nadzaladevi')],
+            [InlineKeyboardButton("Didube-Chugureti", callback_data='Didube-Chugureti')],
+            [InlineKeyboardButton("Old Tbilisi", callback_data='Old Tbilisi')],
+            [InlineKeyboardButton("All regions", callback_data='all_regions')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("Please choose a district:", reply_markup=reply_markup)
 
-            if houses:
-                await show_house(query, user_id)
-            else:
-                await query.edit_message_text("No houses found.")
-        else:
-            keyboard = [
-                [InlineKeyboardButton("Next", callback_data='next')],
-                [InlineKeyboardButton("Restart", callback_data='restart')]
+    # Handle district selection and ask for neighborhood if applicable
+    elif query.data in ['Vake-Saburtalo', 'Isani-Samgori', 'Gldani-Nadzaladevi', 'Didube-Chugureti', 'Old Tbilisi']:
+        user_states[user_id]['selected_district'] = query.data
+
+        # Show relevant neighborhoods for the selected district
+        if query.data == 'Vake-Saburtalo':
+            neighborhoods = [
+                "Nutsubidze plateau", "Saburtalo", "Digomi village", "Districts of Vazha-Pshavela", "Lisi lake",
+                "Turtle lake", "Bagebi", "Didi digomi", "Digomi 1 - 9", "Vake", "Vashlijvari", "Vedzisi", "Tkhinvali"
             ]
-            await query.edit_message_text("Houses already fetched. Use 'Next' to view them or 'Restart' to fetch new houses.", reply_markup=InlineKeyboardMarkup(keyboard))
+        elif query.data == 'Isani-Samgori':
+            neighborhoods = ["Airport village", "Dampalo village", "Vazisubani", "Varketili", "Isani", "Lilo", "Mesame masivi", "Ortachala", "Orkhevi", "Samgori", "Ponichala", "Airport", "Afrika", "Navtlugi"]
+        elif query.data == 'Gldani-Nadzaladevi':
+            neighborhoods = ["Avchala", "Gldani", "Gldanula", "Zahesi", "Tbilisi sea", "Temqa", "Koniaki village", "Lotkini", "Mukhiani", "Nadzaladevi", "Sanzona", "Gldani village", "Ivertubani"]
+        elif query.data == 'Didube-Chugureti':
+            neighborhoods = ["Didube", "Digomi", "Kukia", "Svanetis ubani", "Chugureti"]
+        elif query.data == 'Old Tbilisi':
+            neighborhoods = ["Abanotubani", "Avlabari", "Elia", "Vera", "Mtatsminda", "Sololaki"]
+
+        keyboard = [[InlineKeyboardButton(nb, callback_data=f'neighborhood_{nb}')] for nb in neighborhoods]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(f"Please choose a neighborhood in {query.data}:", reply_markup=reply_markup)
+
+    elif query.data == 'all_regions':
+        user_states[user_id]['selected_district'] = 'all_regions'
+        user_states[user_id]['houses_fetched'] = False
+        await query.edit_message_text("Fetching houses for all regions, please wait...")
+        houses = await fetch_houses(user_states[user_id]['page'])
+        user_states[user_id]['houses'] = houses
+        user_states[user_id]['houses_fetched'] = True
+
+        if houses:
+            await show_house(query, user_id)
+        else:
+            await query.edit_message_text("No houses found.")
+    
+    # Handle neighborhood selection
+    elif query.data.startswith('neighborhood_'):
+        neighborhood = query.data.split('_')[1]
+        user_states[user_id]['selected_neighborhood'] = neighborhood
+        await query.edit_message_text(f"You selected {neighborhood}. Fetching houses, please wait...")
+        houses = await fetch_houses(user_states[user_id]['page'])
+        user_states[user_id]['houses'] = houses
+        user_states[user_id]['houses_fetched'] = True
+
+        if houses:
+            await show_house(query, user_id)
+        else:
+            await query.edit_message_text("No houses found.")
 
     elif query.data == 'next':
         current_index = user_states[user_id]['current_house_index']
@@ -157,7 +202,7 @@ async def show_house(query, user_id):
     house = user_states[user_id]['houses'][user_states[user_id]['current_house_index']]
     
     title = house.get('title', 'No title available')
-    price = house.get('price', 'No price available')
+    price = house.get('price', 'Neogitable Price')
     location = house.get('location', 'No location available')
     bedrooms = house.get('bedrooms', 'No bedrooms available')
     floor = house.get('floor', 'No floor information available')
@@ -172,6 +217,7 @@ async def show_house(query, user_id):
         f"🛏️ Bedrooms: {bedrooms}\n"
         f"🏢 Floor: {floor}\n"
         f"📏 Size: {size}\n"
+        f"📏 links: {links}\n"
     )
 
     keyboard = [
