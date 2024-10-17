@@ -6,7 +6,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from threading import Thread
 from flask import Flask
-from requests_html import AsyncHTMLSession
 app = Flask(__name__)
 
 @app.route('/')
@@ -14,34 +13,11 @@ def index():
     return "<h1>Hello</h1>"
 
 load_dotenv()
-bot_token = os.getenv('BOT_TOKEN')
+bot_token = os.getenv('BOT_TEST_TOKEN')
 user_states = {}
 
-async def fetch_house_images(house_link):
-    try:
-        print(f"Fetching images from {house_link}")
-        session = AsyncHTMLSession()
-        response = await session.get(house_link)
-        await response.html.arender(sleep=1)
-
-        soup = BeautifulSoup(response.html.html, 'html.parser')
-        images_div = soup.find('div', class_='lg-inner')
-
-        if not images_div:
-            print(f"No image section found on the page: {house_link}")
-            return []
-
-        img_tags = images_div.find_all('img', class_='lg-object lg-image')
-        images = [img['src'] for img in img_tags if img.get('src')]
-
-        print(f"Images found: {images}")
-        return images
-    except Exception as e:
-        print(f"Error fetching images from {house_link}: {e}")
-        return []
-
 async def fetch_houses():
-    url = "https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1"
+    url = "https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&page=1"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
     }
@@ -72,11 +48,8 @@ async def fetch_houses():
             link_tag = house.find('a', href=True)
             house_link = f"https://home.ss.ge{link_tag['href']}" if link_tag else None
 
-            photos = await fetch_house_images(house_link) if house_link else []
-
             fetched_houses.append({
                 'title': title,
-                'photos': photos,
                 'price': price,
                 'location': location,
                 'floor': floor,
@@ -124,7 +97,11 @@ async def button(update: Update, context):
             else:
                 await query.edit_message_text("No houses found.")
         else:
-            await query.edit_message_text("Houses already fetched. Use 'Next' to view them.")
+            keyboard = [
+                [InlineKeyboardButton("Next", callback_data='next')],
+                [InlineKeyboardButton("Restart", callback_data='restart')]
+            ]
+            await query.edit_message_text("Houses already fetched. Use 'Next' to view them or 'Restart' to fetch new houses.", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif query.data == 'next':
         current_index = user_states[user_id]['current_house_index']
@@ -132,11 +109,23 @@ async def button(update: Update, context):
             user_states[user_id]['current_house_index'] += 1
             await show_house(query, user_id)
         else:
-            await query.edit_message_text("No more houses available.")
+            await query.message.reply_text("No more houses available.")
+
+    elif query.data == 'restart':
+        user_states[user_id] = {'current_house_index': 0, 'houses': [], 'houses_fetched': False}
+        await query.edit_message_text("Fetching new houses, please wait...")
+        houses = await fetch_houses()
+        user_states[user_id]['houses'] = houses
+        user_states[user_id]['houses_fetched'] = True
+
+        if houses:
+            await show_house(query, user_id)
+        else:
+            await query.edit_message_text("No houses found.")
 
     elif query.data.startswith('interested_'):
         house_index = int(query.data.split('_')[1])
-        await query.edit_message_text(f"You are interested in house {house_index + 1}. We'll follow up with more details.")
+        await query.message.reply_text(f"You are interested in house {house_index + 1}. We'll follow up with more details.")
 
 async def show_house(query, user_id):
     house = user_states[user_id]['houses'][user_states[user_id]['current_house_index']]
@@ -165,13 +154,7 @@ async def show_house(query, user_id):
         [InlineKeyboardButton("I'm Interested", callback_data=f'interested_{user_states[user_id]["current_house_index"]}')]
     ]
 
-    if house.get('photos'):
-        await query.message.reply_photo(
-            photo=house['photos'][0], caption=text, reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    else:
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-
+    await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 def main():
     application = Application.builder().token(bot_token).build()
