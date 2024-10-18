@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -6,6 +7,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from threading import Thread
 from flask import Flask
+import asyncio
+from telegram.error import TimedOut
+import httpx
 
 app = Flask(__name__)
 
@@ -17,24 +21,34 @@ load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')
 user_states = {}
 
-async def fetch_houses(page=1):
+# Track user states and cooldowns
+user_states = {}
+user_rate_limits = {}
+global_last_command_time = 0
+GLOBAL_COOLDOWN = 2  # 5 seconds for global rate limit
+USER_COOLDOWN = 10  # 10 seconds cooldown per user
+
+async def fetch_houses(page=1, subdistrict_id=None):
     url = f"https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&page={page}"
+    
+    if subdistrict_id:
+        url = f"https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&subdistrictIds={subdistrict_id}&currencyId=1&page={page}"
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
     }
 
     try:
-        response = requests.get(url, headers=headers)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(url, headers=headers)
         if response.status_code == 403:
             return []
 
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Fetch house links from the first div
         house_link_divs = soup.find_all('div', class_='sc-8fa2c16a-0')
         house_links = [f"https://home.ss.ge{div.find('a')['href']}" for div in house_link_divs if div.find('a', href=True)]
 
-        # Fetch other house details from the second div
         house_detail_divs = soup.find_all('div', class_='sc-bc0f943e-0')
         
         fetched_houses = []
@@ -43,7 +57,7 @@ async def fetch_houses(page=1):
             title = title.text.strip() if title else 'No title available'
 
             price = detail_div.find('span', class_='listing-detailed-item-price')
-            price = price.text.strip() if price else 'No price available'
+            price = price.text.strip() if price else 'Negotiable price'
 
             location = detail_div.find('h5', class_='listing-detailed-item-address')
             location = location.text.strip() if location else 'No location available'
@@ -56,7 +70,6 @@ async def fetch_houses(page=1):
             bedrooms = detail_div.find('span', class_='icon-bed').find_parent('div')
             bedrooms = bedrooms.text.strip() if bedrooms else 'No available'
 
-            # Match the link from the previous div (assuming the number of links matches the number of details)
             house_link = house_links[i] if i < len(house_links) else None
 
             fetched_houses.append({
@@ -71,26 +84,69 @@ async def fetch_houses(page=1):
 
         return fetched_houses
 
-    except Exception as e:
+    except (httpx.ConnectTimeout, httpx.RequestError) as e:
         print(f"Error fetching houses: {e}")
         return []
 
+async def send_message_with_retry(update, context, text, reply_markup=None, retry_count=2):
+    for attempt in range(retry_count):
+        try:
+            await update.message.reply_text(text, reply_markup=reply_markup)
+            print("Message sent successfully!")
+            break
+        except TimedOut:
+            print(f"Attempt {attempt + 1} failed. Retrying...")
+            if attempt < retry_count - 1:
+                await asyncio.sleep(2)  # Adjust the delay if needed
+            else:
+                print("Failed to send message after retries.")
+
+                
+def check_rate_limits(user_id):
+    global global_last_command_time
+    current_time = time.time()
+
+    # Global rate limiting
+    if current_time - global_last_command_time < GLOBAL_COOLDOWN:
+        return False, "Global cooldown in effect. Please wait a moment."
+
+    # User-specific rate limiting
+    if user_id in user_rate_limits:
+        if current_time - user_rate_limits[user_id] < USER_COOLDOWN:
+            return False, "You are doing this too quickly. Please wait a moment."
+
+    # Update the global and user-specific cooldowns
+    global_last_command_time = current_time
+    user_rate_limits[user_id] = current_time
+
+    return True, None
 
 async def start(update: Update, context):
+    user_id = update.effective_user.id
+    print("Received /start command")
+
+    # Check rate limits
+    can_proceed, error_message = check_rate_limits(user_id)
+    if not can_proceed:
+        await send_message_with_retry(update, context, error_message)
+        return
+
     keyboard = [
         [InlineKeyboardButton("Rent", callback_data='rent')],
         [InlineKeyboardButton("Buy", callback_data='buy')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
-        "Choose an option from the inline menu:",
-        reply_markup=reply_markup
-    )
-
+    await send_message_with_retry(update, context, "Choose an option from the inline menu:", reply_markup=reply_markup)
 async def button(update: Update, context):
     user_id = update.effective_user.id
     query = update.callback_query
+
+    # Check rate limits
+    can_proceed, error_message = check_rate_limits(user_id)
+    if not can_proceed:
+        await query.answer(error_message)
+        return
 
     await query.answer()
 
@@ -98,7 +154,6 @@ async def button(update: Update, context):
         user_states[user_id] = {'current_house_index': 0, 'houses': [], 'houses_fetched': False, 'page': 1}
 
     if query.data == 'buy':
-        # Show district options
         keyboard = [
             [InlineKeyboardButton("Vake-Saburtalo", callback_data='Vake-Saburtalo')],
             [InlineKeyboardButton("Isani-Samgori", callback_data='Isani-Samgori')],
@@ -110,26 +165,31 @@ async def button(update: Update, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text("Please choose a district:", reply_markup=reply_markup)
 
-    # Handle district selection and ask for neighborhood if applicable
     elif query.data in ['Vake-Saburtalo', 'Isani-Samgori', 'Gldani-Nadzaladevi', 'Didube-Chugureti', 'Old Tbilisi']:
         user_states[user_id]['selected_district'] = query.data
 
-        # Show relevant neighborhoods for the selected district
+        neighborhoods, subdistrict_ids = [], []
+
         if query.data == 'Vake-Saburtalo':
             neighborhoods = [
                 "Nutsubidze plateau", "Saburtalo", "Digomi village", "Districts of Vazha-Pshavela", "Lisi lake",
-                "Turtle lake", "Bagebi", "Didi digomi", "Digomi 1 - 9", "Vake", "Vashlijvari", "Vedzisi", "Tkhinvali"
+                "Turtle lake", "Bagebi", "Didi digomi", "Digomi 1-9", "Vake", "Vashlijvari", "Vedzisi", "Tkhinvali"
             ]
+            subdistrict_ids = [2, 3, 4, 5, 26, 27, 44, 45, 46, 47, 48, 49, 50]
         elif query.data == 'Isani-Samgori':
             neighborhoods = ["Airport village", "Dampalo village", "Vazisubani", "Varketili", "Isani", "Lilo", "Mesame masivi", "Ortachala", "Orkhevi", "Samgori", "Ponichala", "Airport", "Afrika", "Navtlugi"]
+            subdistrict_ids = [6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 24]
         elif query.data == 'Gldani-Nadzaladevi':
             neighborhoods = ["Avchala", "Gldani", "Gldanula", "Zahesi", "Tbilisi sea", "Temqa", "Koniaki village", "Lotkini", "Mukhiani", "Nadzaladevi", "Sanzona", "Gldani village", "Ivertubani"]
+            subdistrict_ids = [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 53]
         elif query.data == 'Didube-Chugureti':
             neighborhoods = ["Didube", "Digomi", "Kukia", "Svanetis ubani", "Chugureti"]
+            subdistrict_ids = [1, 28, 29, 30, 31]
         elif query.data == 'Old Tbilisi':
             neighborhoods = ["Abanotubani", "Avlabari", "Elia", "Vera", "Mtatsminda", "Sololaki"]
+            subdistrict_ids = [20, 21, 22, 23, 51, 52]
 
-        keyboard = [[InlineKeyboardButton(nb, callback_data=f'neighborhood_{nb}')] for nb in neighborhoods]
+        keyboard = [[InlineKeyboardButton(nb, callback_data=f'neighborhood_{subdistrict_ids[i]}')] for i, nb in enumerate(neighborhoods)]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(f"Please choose a neighborhood in {query.data}:", reply_markup=reply_markup)
 
@@ -146,12 +206,11 @@ async def button(update: Update, context):
         else:
             await query.edit_message_text("No houses found.")
     
-    # Handle neighborhood selection
     elif query.data.startswith('neighborhood_'):
-        neighborhood = query.data.split('_')[1]
-        user_states[user_id]['selected_neighborhood'] = neighborhood
-        await query.edit_message_text(f"You selected {neighborhood}. Fetching houses, please wait...")
-        houses = await fetch_houses(user_states[user_id]['page'])
+        subdistrict_id = query.data.split('_')[1]
+        user_states[user_id]['selected_subdistrict'] = subdistrict_id
+        await query.edit_message_text(f"Fetching houses in selected neighborhood, please wait...")
+        houses = await fetch_houses(user_states[user_id]['page'], subdistrict_id=subdistrict_id)
         user_states[user_id]['houses'] = houses
         user_states[user_id]['houses_fetched'] = True
 
@@ -166,43 +225,27 @@ async def button(update: Update, context):
             user_states[user_id]['current_house_index'] += 1
             await show_house(query, user_id)
         else:
-            # If all houses from current page are shown, fetch the next page
             user_states[user_id]['page'] += 1
-            await query.edit_message_text(f"Fetching page {user_states[user_id]['page']} houses, please wait...")
-            new_houses = await fetch_houses(user_states[user_id]['page'])
-
-            if new_houses:
-                user_states[user_id]['houses'].extend(new_houses)
-                user_states[user_id]['current_house_index'] += 1
+            await query.edit_message_text("Fetching next page, please wait...")
+            houses = await fetch_houses(user_states[user_id]['page'])
+            if houses:
+                user_states[user_id]['houses'] = houses
+                user_states[user_id]['current_house_index'] = 0
                 await show_house(query, user_id)
             else:
-                await query.edit_message_text("All houses are fetched. Use 'Restart' to refetch.")
-                keyboard = [
-                    [InlineKeyboardButton("Restart", callback_data='restart')]
-                ]
-                await query.edit_message_text("All houses fetched.", reply_markup=InlineKeyboardMarkup(keyboard))
+                await query.edit_message_text("No more houses found.")
 
-    elif query.data == 'restart':
-        user_states[user_id] = {'current_house_index': 0, 'houses': [], 'houses_fetched': False, 'page': 1}
-        await query.edit_message_text("Fetching new houses, please wait...")
-        houses = await fetch_houses(user_states[user_id]['page'])
-        user_states[user_id]['houses'] = houses
-        user_states[user_id]['houses_fetched'] = True
-
-        if houses:
+    elif query.data == 'previous':
+        current_index = user_states[user_id]['current_house_index']
+        if current_index > 0:
+            user_states[user_id]['current_house_index'] -= 1
             await show_house(query, user_id)
-        else:
-            await query.edit_message_text("No houses found.")
-
-    elif query.data.startswith('interested_'):
-        house_index = int(query.data.split('_')[1])
-        await query.message.reply_text(f"You are interested in house {house_index + 1}. We'll follow up with more details.")
 
 async def show_house(query, user_id):
     house = user_states[user_id]['houses'][user_states[user_id]['current_house_index']]
     
     title = house.get('title', 'No title available')
-    price = house.get('price', 'Neogitable Price')
+    price = house.get('price', 'Negotiable Price')
     location = house.get('location', 'No location available')
     bedrooms = house.get('bedrooms', 'No bedrooms available')
     floor = house.get('floor', 'No floor information available')
@@ -217,7 +260,7 @@ async def show_house(query, user_id):
         f"🛏️ Bedrooms: {bedrooms}\n"
         f"🏢 Floor: {floor}\n"
         f"📏 Size: {size}\n"
-        f"📏 links: {links}\n"
+        f"📏 Links: {links}\n"
     )
 
     keyboard = [
@@ -227,15 +270,17 @@ async def show_house(query, user_id):
 
     await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
+
 def main():
     application = Application.builder().token(bot_token).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
 
+    # Use Gunicorn or another WSGI server for production
     thread = Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))))
     thread.start()
 
     application.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

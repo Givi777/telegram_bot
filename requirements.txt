@@ -15,3 +15,4 @@ lxml[html_clean]==4.9.3
 urllib3==2.2.3
 Werkzeug==3.0.4
 honcho==1.0.1
+pymongo==4.10.1
