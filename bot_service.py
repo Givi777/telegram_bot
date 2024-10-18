@@ -21,12 +21,11 @@ load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')
 user_states = {}
 
-# Track user states and cooldowns
 user_states = {}
 user_rate_limits = {}
 global_last_command_time = 0
-GLOBAL_COOLDOWN = 2  # 5 seconds for global rate limit
-USER_COOLDOWN = 10  # 10 seconds cooldown per user
+GLOBAL_COOLDOWN = 0.2
+USER_COOLDOWN = 0.2
 
 async def fetch_houses(page=1, subdistrict_id=None):
     url = f"https://home.ss.ge/en/real-estate/l/Flat/For-Sale?cityIdList=95&currencyId=1&page={page}"
@@ -88,7 +87,7 @@ async def fetch_houses(page=1, subdistrict_id=None):
         print(f"Error fetching houses: {e}")
         return []
 
-async def send_message_with_retry(update, context, text, reply_markup=None, retry_count=2):
+async def send_message_with_retry(update, context, text, reply_markup=None, retry_count=1):
     for attempt in range(retry_count):
         try:
             await update.message.reply_text(text, reply_markup=reply_markup)
